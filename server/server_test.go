@@ -15,7 +15,6 @@ func TestCreateTask(t *testing.T) {
 		Description: "This is a test task",
 	}
 
-	// Вызов функции CreateTask с проверкой ошибки
 	res, err := s.CreateTask(context.Background(), req)
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
