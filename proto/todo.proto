@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package todo;
+
+option go_package = "grpc-todo/proto";
+
+message Task {
+  int32 id = 1;
+  string title = 2;
+  string description = 3;
+  Status status = 4;
+}
+
+enum Status {
+  UNKNOWN = 0;
+  TODO = 1;
+  IN_PROGRESS = 2;
+  PAUSED = 3;
+  DONE = 4;
+}
+
+message CreateTaskRequest {
+  string title = 1;
+  string description = 2;
+}
+
+message CreateTaskResponse {
+  Task task = 1;
+}
+
+message GetAllTasksRequest {}
+
+message GetAllTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message UpdateTaskStatusRequest {
+  int32 id = 1;
+  Status status = 2;
+}
+
+message UpdateTaskStatusResponse {
+  Task task = 1;
+}
+
+message DeleteTaskRequest {
+  int32 id = 1;
+}
+
+message DeleteTaskResponse {}
+
+service ToDoService {
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc GetAllTasks(GetAllTasksRequest) returns (GetAllTasksResponse);
+  rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
+}

@@ -1,0 +1,8 @@
+.DS_Store
+
+# Go binary directories
+/bin/
+/pkg/
+
+.vscode/
+.history/
