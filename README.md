@@ -1,28 +1,28 @@
 Build
 
-    ```$ make build```
+    $ make build
     
 Run the server
 
-    ```$ make run```
+    $ make run
 
 Run tests
 
-    ```$ make tests```
+    $ make tests
 
 Install golangci-lint if not installed
 
-    ```$ make install-linter```
+    $ make install-linter
 
 Run linters 
 
-    ```$ make lint```
+    $ make lint
 
 Methods: 
 
-    ```$ make create-task
+    $ make create-task
     $ make get-all-tasks
     $ make update-task-status
-    $ make delete-task```
+    $ make delete-task
 
 
