@@ -3,50 +3,68 @@ package server
 import (
 	"context"
 	"testing"
-	"time"
 
+	"grpc-todo/domain"
 	"grpc-todo/proto"
-
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"grpc-todo/repository"
 )
 
-func setupTestMongoDB(t *testing.T) (*mongo.Database, func()) {
-	mongoURI := "mongodb://localhost:27017" // Используйте ваш URI, если он отличается
-	clientOptions := options.Client().ApplyURI(mongoURI)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+type mockRepository struct {
+	tasks map[string]*domain.Task
+}
 
-	client, err := mongo.Connect(ctx, clientOptions)
-	if err != nil {
-		t.Fatalf("Failed to connect to MongoDB: %v", err)
+func newMockRepository() repository.Repository {
+	return &mockRepository{
+		tasks: make(map[string]*domain.Task),
 	}
+}
 
-	db := client.Database("grpc_todo_test_db")
+func (m *mockRepository) CreateTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
+	task.Id = "mock_id_" + task.Title
+	m.tasks[task.Id] = task
+	return task, nil
+}
 
-	cleanup := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		err := db.Drop(ctx)
-		if err != nil {
-			t.Fatalf("Failed to drop test database: %v", err)
-		}
-		err = client.Disconnect(ctx)
-		if err != nil {
-			t.Fatalf("Failed to disconnect MongoDB client: %v", err)
+func (m *mockRepository) GetAllTasks(ctx context.Context) ([]*domain.Task, error) {
+	var res []*domain.Task
+	for _, t := range m.tasks {
+		res = append(res, t)
+	}
+	return res, nil
+}
+
+func (m *mockRepository) UpdateTaskStatus(ctx context.Context, id string, status string) error {
+	t, ok := m.tasks[id]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	t.Status = status
+	return nil
+}
+
+func (m *mockRepository) DeleteTask(ctx context.Context, id string) error {
+	_, ok := m.tasks[id]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	delete(m.tasks, id)
+	return nil
+}
+
+func (m *mockRepository) DeleteDoneTasks(ctx context.Context) (int64, error) {
+	var count int64
+	for id, t := range m.tasks {
+		if t.Status == "DONE" {
+			delete(m.tasks, id)
+			count++
 		}
 	}
-
-	return db, cleanup
+	return count, nil
 }
 
 func TestCreateTask(t *testing.T) {
-	db, cleanup := setupTestMongoDB(t)
-	defer cleanup()
-
-	s := NewToDoServer(db)
+	repo := newMockRepository()
+	s := NewToDoServer(repo)
 
 	req := &proto.CreateTaskRequest{
 		Title:       "Test Task",
@@ -66,24 +84,11 @@ func TestCreateTask(t *testing.T) {
 	if res.Task.Id == "" {
 		t.Errorf("Expected task to have an ID, got empty string")
 	}
-
-	collection := db.Collection("tasks")
-	var result Task
-	objectID, err := primitive.ObjectIDFromHex(res.Task.Id)
-	if err != nil {
-		t.Fatalf("Invalid task ID: %v", err)
-	}
-	err = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&result)
-	if err != nil {
-		t.Fatalf("Failed to find task in database: %v", err)
-	}
 }
 
 func TestGetAllTasks(t *testing.T) {
-	db, cleanup := setupTestMongoDB(t)
-	defer cleanup()
-
-	s := NewToDoServer(db)
+	repo := newMockRepository()
+	s := NewToDoServer(repo)
 
 	_, err := s.CreateTask(context.Background(), &proto.CreateTaskRequest{
 		Title:       "Task 1",
@@ -104,10 +109,8 @@ func TestGetAllTasks(t *testing.T) {
 }
 
 func TestUpdateTaskStatus(t *testing.T) {
-	db, cleanup := setupTestMongoDB(t)
-	defer cleanup()
-
-	s := NewToDoServer(db)
+	repo := newMockRepository()
+	s := NewToDoServer(repo)
 
 	createRes, err := s.CreateTask(context.Background(), &proto.CreateTaskRequest{
 		Title:       "Task 1",
@@ -127,27 +130,23 @@ func TestUpdateTaskStatus(t *testing.T) {
 		t.Fatalf("UpdateTaskStatus failed: %v", err)
 	}
 
-	collection := db.Collection("tasks")
-	var task Task
-	objectID, err := primitive.ObjectIDFromHex(createRes.Task.Id)
+	tasks, err := repo.GetAllTasks(context.Background())
 	if err != nil {
-		t.Fatalf("Invalid task ID: %v", err)
-	}
-	err = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&task)
-	if err != nil {
-		t.Fatalf("Failed to find task: %v", err)
+		t.Fatalf("GetAllTasks failed: %v", err)
 	}
 
-	if task.Status != proto.Status_DONE {
-		t.Errorf("Expected status DONE, got %v", task.Status)
+	if len(tasks) != 1 {
+		t.Errorf("Expected 1 task, got %d", len(tasks))
+	}
+
+	if tasks[0].Status != "DONE" {
+		t.Errorf("Expected status DONE, got %s", tasks[0].Status)
 	}
 }
 
 func TestDeleteTask(t *testing.T) {
-	db, cleanup := setupTestMongoDB(t)
-	defer cleanup()
-
-	s := NewToDoServer(db)
+	repo := newMockRepository()
+	s := NewToDoServer(repo)
 
 	createRes, err := s.CreateTask(context.Background(), &proto.CreateTaskRequest{
 		Title:       "Task 1",
@@ -164,13 +163,12 @@ func TestDeleteTask(t *testing.T) {
 		t.Fatalf("DeleteTask failed: %v", err)
 	}
 
-	collection := db.Collection("tasks")
-	objectID, err := primitive.ObjectIDFromHex(createRes.Task.Id)
+	tasks, err := repo.GetAllTasks(context.Background())
 	if err != nil {
-		t.Fatalf("Invalid task ID: %v", err)
+		t.Fatalf("GetAllTasks failed: %v", err)
 	}
-	err = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&Task{})
-	if err == nil {
-		t.Fatalf("Expected task to be deleted, but it was found in the database")
+
+	if len(tasks) != 0 {
+		t.Errorf("Expected 0 tasks, got %d", len(tasks))
 	}
 }

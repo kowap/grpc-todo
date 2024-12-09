@@ -7,36 +7,33 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"grpc-todo/proto"
+	"grpc-todo/repository"
 	"grpc-todo/server"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
 func main() {
-	mongoClient, err := connectToMongoDB()
+	mongoURI := os.Getenv("MONGO_URI")
+	if mongoURI == "" {
+		mongoURI = "mongodb://localhost:27017"
+	}
+
+	mongoClient, err := repository.ConnectToMongoDB(mongoURI)
 	if err != nil {
 		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
-	defer func() {
-		if err := mongoClient.Disconnect(context.Background()); err != nil {
-			log.Printf("Error disconnecting from MongoDB: %v", err)
-		}
-	}()
+	defer mongoClient.Disconnect(context.Background())
 
 	db := mongoClient.Database("grpc_todo_db")
+	repo := repository.NewRepository(db)
 
 	grpcServer := grpc.NewServer()
-
-	todoServer := server.NewToDoServer(db)
-
+	todoServer := server.NewToDoServer(repo)
 	proto.RegisterToDoServiceServer(grpcServer, todoServer)
-
 	reflection.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", ":50051")
@@ -44,7 +41,6 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	// cron
 	cronJob := todoServer.StartCronJob()
 	defer cronJob.Stop()
 
@@ -68,29 +64,4 @@ func main() {
 	case err := <-errChan:
 		log.Fatalf("Server error: %v", err)
 	}
-}
-
-func connectToMongoDB() (*mongo.Client, error) {
-	mongoURI := os.Getenv("MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	clientOptions := options.Client().ApplyURI(mongoURI)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	client, err := mongo.Connect(ctx, clientOptions)
-	if err != nil {
-		return nil, err
-	}
-
-	err = client.Ping(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Println("Connected to MongoDB!")
-	return client, nil
 }

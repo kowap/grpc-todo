@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    container_name: grpc-todo-app
+    depends_on:
+      - mongo
+    ports:
+      - "50051:50051"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/grpc-todo
+    networks:
+      - app-network
+
+  mongo:
+    image: mongo:8.0
+    container_name: grpc-todo-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+
+volumes:
+  mongo-data:
+
+networks:
+  app-network:
+    driver: bridge
